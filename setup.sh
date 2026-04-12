@@ -16,6 +16,7 @@ set -euo pipefail
 
 GITHUB_USER="${GITHUB_USER:-danylomikula}"
 DOTFILES_REPO="${DOTFILES_REPO:-fedora-dotfiles}"
+GITHUB_SSH_KEY="${GITHUB_SSH_KEY:-$HOME/.ssh/id_ed25519_sk_rk_git-personal}"
 
 echo "=== Fedora Cosmic Atomic Bootstrap ==="
 
@@ -31,6 +32,11 @@ if [[ -z "$GITHUB_USER" ]]; then
 fi
 
 DOTFILES_SSH_URL="git@github.com:${GITHUB_USER}/${DOTFILES_REPO}.git"
+GIT_SSH_COMMAND_BASE='ssh -o StrictHostKeyChecking=accept-new'
+
+if [[ -f "$GITHUB_SSH_KEY" ]]; then
+  GIT_SSH_COMMAND_BASE="$GIT_SSH_COMMAND_BASE -i $GITHUB_SSH_KEY -o IdentitiesOnly=yes"
+fi
 
 # -----------------------------------------------------------------------------
 # 1. Base OS + host packages (rpm-ostree)
@@ -168,20 +174,25 @@ if [[ ! -d "$HOME/.local/share/chezmoi" ]]; then
   mkdir -p "$HOME/.ssh"
   chmod 700 "$HOME/.ssh"
 
-  if ! GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=accept-new' git ls-remote "$DOTFILES_SSH_URL" &>/dev/null; then
+  if ! GIT_SSH_COMMAND="$GIT_SSH_COMMAND_BASE" git ls-remote "$DOTFILES_SSH_URL" &>/dev/null; then
     if command -v ssh-keygen &>/dev/null && [[ -r /dev/tty ]]; then
       echo "  Restoring resident SSH keys from YubiKey into ~/.ssh"
       (
         cd "$HOME/.ssh"
         ssh-keygen -K </dev/tty
       ) || true
+
+      if [[ -f "$GITHUB_SSH_KEY" ]]; then
+        GIT_SSH_COMMAND_BASE="ssh -o StrictHostKeyChecking=accept-new -i $GITHUB_SSH_KEY -o IdentitiesOnly=yes"
+      fi
     fi
   fi
 
-  if ! GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=accept-new' git ls-remote "$DOTFILES_SSH_URL" &>/dev/null; then
+  if ! GIT_SSH_COMMAND="$GIT_SSH_COMMAND_BASE" git ls-remote "$DOTFILES_SSH_URL" &>/dev/null; then
     echo "Unable to access $DOTFILES_SSH_URL over SSH." >&2
     echo "Ensure your GitHub SSH key is already added to GitHub and available on this machine." >&2
     echo "If you use a resident FIDO/YubiKey SSH key, insert the key and run: cd ~/.ssh && ssh-keygen -K" >&2
+    echo "If your GitHub key uses a different filename, re-run with GITHUB_SSH_KEY=/path/to/private-key bash" >&2
     exit 1
   fi
 fi
