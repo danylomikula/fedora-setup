@@ -203,9 +203,9 @@ else
   fi
 
   if [[ -d "$HOME/.local/share/chezmoi" ]]; then
-    chezmoi update
+    GIT_SSH_COMMAND="$GIT_SSH_COMMAND_BASE" chezmoi update
   else
-    chezmoi init --apply --ssh "$GITHUB_USER/$DOTFILES_REPO"
+    GIT_SSH_COMMAND="$GIT_SSH_COMMAND_BASE" chezmoi init --apply --guess-repo-url=false "$DOTFILES_SSH_URL"
   fi
 fi
 
