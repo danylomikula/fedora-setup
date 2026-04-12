@@ -32,7 +32,7 @@ if [[ -z "$GITHUB_USER" ]]; then
 fi
 
 DOTFILES_SSH_URL="git@github.com:${GITHUB_USER}/${DOTFILES_REPO}.git"
-GIT_SSH_COMMAND_BASE='ssh -o StrictHostKeyChecking=accept-new'
+GIT_SSH_COMMAND_BASE='ssh -o StrictHostKeyChecking=accept-new -o IdentityAgent=none'
 
 if [[ -f "$GITHUB_SSH_KEY" ]]; then
   GIT_SSH_COMMAND_BASE="$GIT_SSH_COMMAND_BASE -i $GITHUB_SSH_KEY -o IdentitiesOnly=yes"
@@ -183,7 +183,7 @@ if [[ ! -d "$HOME/.local/share/chezmoi" ]]; then
       ) || true
 
       if [[ -f "$GITHUB_SSH_KEY" ]]; then
-        GIT_SSH_COMMAND_BASE="ssh -o StrictHostKeyChecking=accept-new -i $GITHUB_SSH_KEY -o IdentitiesOnly=yes"
+        GIT_SSH_COMMAND_BASE="ssh -o StrictHostKeyChecking=accept-new -o IdentityAgent=none -i $GITHUB_SSH_KEY -o IdentitiesOnly=yes"
       fi
     fi
   fi
