@@ -24,6 +24,14 @@ version_ge() {
   [[ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" == "$2" ]]
 }
 
+run_chezmoi() {
+  if [[ -r /dev/tty ]]; then
+    GIT_SSH_COMMAND="$GIT_SSH_COMMAND_BASE" chezmoi "$@" </dev/tty
+  else
+    GIT_SSH_COMMAND="$GIT_SSH_COMMAND_BASE" chezmoi "$@"
+  fi
+}
+
 if [[ -z "$GITHUB_USER" ]]; then
   if [[ -r /dev/tty ]]; then
     read -r -p "GitHub username for git@github.com:<user>/${DOTFILES_REPO}.git: " GITHUB_USER </dev/tty
@@ -203,9 +211,9 @@ else
   fi
 
   if [[ -d "$HOME/.local/share/chezmoi" ]]; then
-    GIT_SSH_COMMAND="$GIT_SSH_COMMAND_BASE" chezmoi update
+    run_chezmoi update
   else
-    GIT_SSH_COMMAND="$GIT_SSH_COMMAND_BASE" chezmoi init --apply --guess-repo-url=false "$DOTFILES_SSH_URL"
+    run_chezmoi init --apply --guess-repo-url=false "$DOTFILES_SSH_URL"
   fi
 fi
 
