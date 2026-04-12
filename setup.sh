@@ -48,6 +48,7 @@ RPM_OSTREE_VERSION="$(rpm-ostree --version | awk -F"'" '/Version:/ {print $2}')"
 NETBIRD_MIN_FIXED_RPM_OSTREE_VERSION="2025.12"
 NEEDS_REBOOT=false
 NETBIRD_DEFERRED=false
+CHEZMOI_DEFERRED=false
 
 echo "  Current rpm-ostree version: ${RPM_OSTREE_VERSION}"
 
@@ -170,37 +171,42 @@ export PATH="$HOME/.local/bin:$PATH"
 curl -fsSL https://starship.rs/install.sh | sh -s -- -y -b "$HOME/.local/bin"
 export PATH="$HOME/.local/bin:$PATH"
 
-if [[ ! -d "$HOME/.local/share/chezmoi" ]]; then
-  mkdir -p "$HOME/.ssh"
-  chmod 700 "$HOME/.ssh"
+if ! command -v chezmoi &>/dev/null; then
+  CHEZMOI_DEFERRED=true
+  echo "  chezmoi is not available in the current deployment yet. Reboot and re-run setup.sh to apply fedora-dotfiles."
+else
+  if [[ ! -d "$HOME/.local/share/chezmoi" ]]; then
+    mkdir -p "$HOME/.ssh"
+    chmod 700 "$HOME/.ssh"
 
-  if ! GIT_SSH_COMMAND="$GIT_SSH_COMMAND_BASE" git ls-remote "$DOTFILES_SSH_URL" &>/dev/null; then
-    if command -v ssh-keygen &>/dev/null && [[ -r /dev/tty ]]; then
-      echo "  Restoring resident SSH keys from YubiKey into ~/.ssh"
-      (
-        cd "$HOME/.ssh"
-        ssh-keygen -K </dev/tty
-      ) || true
+    if ! GIT_SSH_COMMAND="$GIT_SSH_COMMAND_BASE" git ls-remote "$DOTFILES_SSH_URL" &>/dev/null; then
+      if command -v ssh-keygen &>/dev/null && [[ -r /dev/tty ]]; then
+        echo "  Restoring resident SSH keys from YubiKey into ~/.ssh"
+        (
+          cd "$HOME/.ssh"
+          ssh-keygen -K </dev/tty
+        ) || true
 
-      if [[ -f "$GITHUB_SSH_KEY" ]]; then
-        GIT_SSH_COMMAND_BASE="ssh -o StrictHostKeyChecking=accept-new -o IdentityAgent=none -i $GITHUB_SSH_KEY -o IdentitiesOnly=yes"
+        if [[ -f "$GITHUB_SSH_KEY" ]]; then
+          GIT_SSH_COMMAND_BASE="ssh -o StrictHostKeyChecking=accept-new -o IdentityAgent=none -i $GITHUB_SSH_KEY -o IdentitiesOnly=yes"
+        fi
       fi
+    fi
+
+    if ! GIT_SSH_COMMAND="$GIT_SSH_COMMAND_BASE" git ls-remote "$DOTFILES_SSH_URL" &>/dev/null; then
+      echo "Unable to access $DOTFILES_SSH_URL over SSH." >&2
+      echo "Ensure your GitHub SSH key is already added to GitHub and available on this machine." >&2
+      echo "If you use a resident FIDO/YubiKey SSH key, insert the key and run: cd ~/.ssh && ssh-keygen -K" >&2
+      echo "If your GitHub key uses a different filename, re-run with GITHUB_SSH_KEY=/path/to/private-key bash" >&2
+      exit 1
     fi
   fi
 
-  if ! GIT_SSH_COMMAND="$GIT_SSH_COMMAND_BASE" git ls-remote "$DOTFILES_SSH_URL" &>/dev/null; then
-    echo "Unable to access $DOTFILES_SSH_URL over SSH." >&2
-    echo "Ensure your GitHub SSH key is already added to GitHub and available on this machine." >&2
-    echo "If you use a resident FIDO/YubiKey SSH key, insert the key and run: cd ~/.ssh && ssh-keygen -K" >&2
-    echo "If your GitHub key uses a different filename, re-run with GITHUB_SSH_KEY=/path/to/private-key bash" >&2
-    exit 1
+  if [[ -d "$HOME/.local/share/chezmoi" ]]; then
+    chezmoi update
+  else
+    chezmoi init --apply --ssh "$GITHUB_USER/$DOTFILES_REPO"
   fi
-fi
-
-if [[ -d "$HOME/.local/share/chezmoi" ]]; then
-  chezmoi update
-else
-  chezmoi init --apply --ssh "$GITHUB_USER/$DOTFILES_REPO"
 fi
 
 # -----------------------------------------------------------------------------
@@ -271,23 +277,18 @@ fi
 echo "Next steps:"
 echo "  1. Reboot if prompted above"
 echo "  2. Open Alacritty"
-if [[ "$NETBIRD_DEFERRED" == true ]]; then
+if [[ "$CHEZMOI_DEFERRED" == true ]]; then
+  echo "  3. Re-run setup.sh after reboot to apply fedora-dotfiles"
+elif [[ "$NETBIRD_DEFERRED" == true ]]; then
   echo "  3. Re-run setup.sh after reboot to install NetBird"
-  echo "  4. If GPG key fetch was skipped above, plug in your YubiKey and run: gpg --card-status"
-  echo "  5. If the public key was not fetched above, try manually: gpg-card -- fetch"
-  echo "  6. If that still fails, import it manually: gpg --import /path/to/public-key.asc"
-  echo "  7. flatpak run --command=bw com.bitwarden.desktop login   # one-time Bitwarden CLI login"
-  echo "  8. bwu                                                # unlocks Bitwarden for this shell"
-  echo "  9. chezmoi apply          # applies configs with secrets"
-  echo " 10. cd /path/to/project && devpod up ."
 else
   echo "  3. sudo systemctl enable --now netbird"
-  echo "  4. netbird up --management-url https://your-netbird-management-url"
-  echo "  5. If GPG key fetch was skipped above, plug in your YubiKey and run: gpg --card-status"
-  echo "  6. If the public key was not fetched above, try manually: gpg-card -- fetch"
-  echo "  7. If that still fails, import it manually: gpg --import /path/to/public-key.asc"
-  echo "  8. flatpak run --command=bw com.bitwarden.desktop login   # one-time Bitwarden CLI login"
-  echo "  9. bwu                                                # unlocks Bitwarden for this shell"
-  echo " 10. chezmoi apply          # applies configs with secrets"
-  echo " 11. cd /path/to/project && devpod up ."
 fi
+echo "  4. netbird up --management-url https://your-netbird-management-url"
+echo "  5. If GPG key fetch was skipped above, plug in your YubiKey and run: gpg --card-status"
+echo "  6. If the public key was not fetched above, try manually: gpg-card -- fetch"
+echo "  7. If that still fails, import it manually: gpg --import /path/to/public-key.asc"
+echo "  8. flatpak run --command=bw com.bitwarden.desktop login   # one-time Bitwarden CLI login"
+echo "  9. bwu                                                # unlocks Bitwarden for this shell"
+echo " 10. chezmoi apply          # applies configs with secrets"
+echo " 11. cd /path/to/project && devpod up ."
