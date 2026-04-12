@@ -14,10 +14,14 @@ set -euo pipefail
 #   curl -fsSL https://raw.githubusercontent.com/danylomikula/fedora-setup/main/setup.sh | GITHUB_USER=your-github-user DOTFILES_REPO=fedora-dotfiles bash
 # =============================================================================
 
-GITHUB_USER="${GITHUB_USER:-}"
+GITHUB_USER="${GITHUB_USER:-danylomikula}"
 DOTFILES_REPO="${DOTFILES_REPO:-fedora-dotfiles}"
 
 echo "=== Fedora Cosmic Atomic Bootstrap ==="
+
+version_ge() {
+  [[ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" == "$2" ]]
+}
 
 if [[ -z "$GITHUB_USER" ]]; then
   if [[ -r /dev/tty ]]; then
@@ -29,21 +33,34 @@ fi
 DOTFILES_SSH_URL="git@github.com:${GITHUB_USER}/${DOTFILES_REPO}.git"
 
 # -----------------------------------------------------------------------------
-# 1. Host packages (rpm-ostree)
+# 1. Base OS + host packages (rpm-ostree)
 # -----------------------------------------------------------------------------
-echo "--- [1/8] System packages (rpm-ostree) ---"
+echo "--- [1/8] Base OS + host packages (rpm-ostree) ---"
 
 NETBIRD_REPO_FILE="/etc/yum.repos.d/netbird.repo"
+RPM_OSTREE_VERSION="$(rpm-ostree --version | awk -F"'" '/Version:/ {print $2}')"
+NETBIRD_MIN_FIXED_RPM_OSTREE_VERSION="2025.12"
+NEEDS_REBOOT=false
+NETBIRD_DEFERRED=false
 
-sudo tee "$NETBIRD_REPO_FILE" >/dev/null <<'EOF'
-[netbird]
-name=netbird
-baseurl=https://pkgs.netbird.io/yum/
-enabled=1
-gpgcheck=0
-gpgkey=https://pkgs.netbird.io/yum/repodata/repomd.xml.key
-repo_gpgcheck=1
-EOF
+echo "  Current rpm-ostree version: ${RPM_OSTREE_VERSION}"
+
+upgrade_rc=0
+if sudo rpm-ostree upgrade --unchanged-exit-77; then
+  NEEDS_REBOOT=true
+else
+  upgrade_rc=$?
+  if [[ "$upgrade_rc" -eq 77 ]]; then
+    echo "  Base system already up to date."
+  else
+    exit "$upgrade_rc"
+  fi
+fi
+
+if ! version_ge "$RPM_OSTREE_VERSION" "$NETBIRD_MIN_FIXED_RPM_OSTREE_VERSION"; then
+  NETBIRD_DEFERRED=true
+  echo "  Deferring NetBird install until after reboot because rpm-ostree ${RPM_OSTREE_VERSION} is older than ${NETBIRD_MIN_FIXED_RPM_OSTREE_VERSION}."
+fi
 
 LAYERED_PACKAGES=(
   git                    # required for private dotfiles repo access over SSH
@@ -64,15 +81,28 @@ LAYERED_PACKAGES=(
   opensc                 # PKCS#11 for YubiKey SSH
   yubikey-manager        # ykman CLI
   chezmoi                # dotfiles manager
-  netbird                # VPN client
 )
+
+if [[ "$NETBIRD_DEFERRED" == false ]]; then
+  sudo tee "$NETBIRD_REPO_FILE" >/dev/null <<'EOF'
+[netbird]
+name=netbird
+baseurl=https://pkgs.netbird.io/yum/
+enabled=1
+gpgcheck=0
+gpgkey=https://pkgs.netbird.io/yum/repodata/repomd.xml.key
+repo_gpgcheck=1
+EOF
+  LAYERED_PACKAGES+=(netbird) # VPN client
+else
+  sudo rm -f "$NETBIRD_REPO_FILE"
+fi
 
 NEEDED=()
 for pkg in "${LAYERED_PACKAGES[@]}"; do
   rpm -q "$pkg" &>/dev/null || NEEDED+=("$pkg")
 done
 
-NEEDS_REBOOT=false
 if [[ ${#NEEDED[@]} -gt 0 ]]; then
   sudo rpm-ostree install --idempotent "${NEEDED[@]}"
   NEEDS_REBOOT=true
@@ -81,7 +111,7 @@ else
 fi
 
 # The service is only available after reboot if netbird was newly layered.
-if systemctl cat netbird &>/dev/null; then
+if [[ "$NETBIRD_DEFERRED" == false ]] && systemctl cat netbird &>/dev/null; then
   sudo systemctl enable --now netbird
 fi
 
@@ -231,12 +261,23 @@ fi
 echo "Next steps:"
 echo "  1. Reboot if prompted above"
 echo "  2. Open Alacritty"
-echo "  3. sudo systemctl enable --now netbird"
-echo "  4. netbird up --management-url https://your-netbird-management-url"
-echo "  5. If GPG key fetch was skipped above, plug in your YubiKey and run: gpg --card-status"
-echo "  6. If the public key was not fetched above, try manually: gpg-card -- fetch"
-echo "  7. If that still fails, import it manually: gpg --import /path/to/public-key.asc"
-echo "  8. flatpak run --command=bw com.bitwarden.desktop login   # one-time Bitwarden CLI login"
-echo "  9. bwu                                                # unlocks Bitwarden for this shell"
-echo " 10. chezmoi apply          # applies configs with secrets"
-echo " 11. cd /path/to/project && devpod up ."
+if [[ "$NETBIRD_DEFERRED" == true ]]; then
+  echo "  3. Re-run setup.sh after reboot to install NetBird"
+  echo "  4. If GPG key fetch was skipped above, plug in your YubiKey and run: gpg --card-status"
+  echo "  5. If the public key was not fetched above, try manually: gpg-card -- fetch"
+  echo "  6. If that still fails, import it manually: gpg --import /path/to/public-key.asc"
+  echo "  7. flatpak run --command=bw com.bitwarden.desktop login   # one-time Bitwarden CLI login"
+  echo "  8. bwu                                                # unlocks Bitwarden for this shell"
+  echo "  9. chezmoi apply          # applies configs with secrets"
+  echo " 10. cd /path/to/project && devpod up ."
+else
+  echo "  3. sudo systemctl enable --now netbird"
+  echo "  4. netbird up --management-url https://your-netbird-management-url"
+  echo "  5. If GPG key fetch was skipped above, plug in your YubiKey and run: gpg --card-status"
+  echo "  6. If the public key was not fetched above, try manually: gpg-card -- fetch"
+  echo "  7. If that still fails, import it manually: gpg --import /path/to/public-key.asc"
+  echo "  8. flatpak run --command=bw com.bitwarden.desktop login   # one-time Bitwarden CLI login"
+  echo "  9. bwu                                                # unlocks Bitwarden for this shell"
+  echo " 10. chezmoi apply          # applies configs with secrets"
+  echo " 11. cd /path/to/project && devpod up ."
+fi

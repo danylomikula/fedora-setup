@@ -32,6 +32,7 @@ The rule is simple:
 
 It currently:
 
+- upgrades the base `rpm-ostree` deployment
 - installs host packages with `rpm-ostree`
 - installs GUI apps with Flatpak
 - enables the rootless Podman socket
@@ -40,6 +41,8 @@ It currently:
 - pulls `fedora-dotfiles` over SSH
 - applies your dotfiles
 - syncs the optional AI toolbox through the post-apply `chezmoi` hook
+
+If the currently booted `rpm-ostree` is older than the build that fixes the known Fedora subkeys bug, `setup.sh` defers NetBird until after reboot and asks you to run the script again.
 
 ## Usage
 
