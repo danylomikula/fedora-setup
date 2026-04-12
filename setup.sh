@@ -158,12 +158,11 @@ export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/podman/podman.sock"
 # -----------------------------------------------------------------------------
 echo "--- [4/8] Host CLIs + Chezmoi ---"
 
+mkdir -p "$HOME/.local/bin"
 export PATH="$HOME/.local/bin:$PATH"
 
-if ! command -v starship &>/dev/null; then
-  curl -fsSL https://starship.rs/install.sh | sh -s -- -y -b "$HOME/.local/bin"
-  export PATH="$HOME/.local/bin:$PATH"
-fi
+curl -fsSL https://starship.rs/install.sh | sh -s -- -y -b "$HOME/.local/bin"
+export PATH="$HOME/.local/bin:$PATH"
 
 if [[ ! -d "$HOME/.local/share/chezmoi" ]]; then
   mkdir -p "$HOME/.ssh"
