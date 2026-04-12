@@ -33,40 +33,38 @@ DOTFILES_SSH_URL="git@github.com:${GITHUB_USER}/${DOTFILES_REPO}.git"
 # -----------------------------------------------------------------------------
 echo "--- [1/8] System packages (rpm-ostree) ---"
 
-# NetBird documents this RPM repo flow for Fedora Atomic / Universal Blue.
 NETBIRD_REPO_FILE="/etc/yum.repos.d/netbird.repo"
-if [[ ! -f "$NETBIRD_REPO_FILE" ]]; then
-  sudo tee "$NETBIRD_REPO_FILE" >/dev/null <<'EOF'
+
+sudo tee "$NETBIRD_REPO_FILE" >/dev/null <<'EOF'
 [netbird]
 name=netbird
 baseurl=https://pkgs.netbird.io/yum/
 enabled=1
-gpgcheck=1
+gpgcheck=0
 gpgkey=https://pkgs.netbird.io/yum/repodata/repomd.xml.key
 repo_gpgcheck=1
 EOF
-fi
 
 LAYERED_PACKAGES=(
-  git                   # required for private dotfiles repo access over SSH
-  zsh                   # login shell
-  tmux                  # terminal multiplexer
-  alacritty             # terminal emulator
+  git                    # required for private dotfiles repo access over SSH
+  zsh                    # login shell
+  tmux                   # terminal multiplexer
+  alacritty              # terminal emulator
   cascadia-mono-nf-fonts # package-managed Nerd Font used by Alacritty
-  wl-clipboard          # Wayland clipboard for tmux / neovim yank
-  gh                    # GitHub CLI
-  fzf                   # fuzzy finder
-  jq                    # JSON processor
-  yq                    # YAML/JSON/TOML processor
-  zoxide                # smarter cd
-  bat                   # cat replacement
-  eza                   # ls replacement
-  podman-docker         # /usr/bin/docker symlink → podman
-  gnupg2-scdaemon       # YubiKey GPG smartcard for signed commits
-  opensc                # PKCS#11 for YubiKey SSH
-  yubikey-manager       # ykman CLI
-  chezmoi               # dotfiles manager
-  netbird               # VPN client
+  wl-clipboard           # Wayland clipboard for tmux / neovim yank
+  gh                     # GitHub CLI
+  fzf                    # fuzzy finder
+  jq                     # JSON processor
+  yq                     # YAML/JSON/TOML processor
+  zoxide                 # smarter cd
+  bat                    # cat replacement
+  eza                    # ls replacement
+  podman-docker          # /usr/bin/docker symlink → podman
+  gnupg2-scdaemon        # YubiKey GPG smartcard for signed commits
+  opensc                 # PKCS#11 for YubiKey SSH
+  yubikey-manager        # ykman CLI
+  chezmoi                # dotfiles manager
+  netbird                # VPN client
 )
 
 NEEDED=()
