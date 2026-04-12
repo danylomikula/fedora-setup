@@ -246,12 +246,17 @@ devpod context set-options default \
 # -----------------------------------------------------------------------------
 echo "--- [6/8] YubiKey GPG public key ---"
 
-if command -v gpg &>/dev/null && command -v gpg-card &>/dev/null; then
-  if gpg --card-status &>/dev/null; then
-    if gpg-card -- fetch &>/dev/null; then
-      echo "  Public key fetched from card metadata / keyserver."
+if command -v gpg &>/dev/null; then
+  if card_status="$(LC_ALL=C gpg --card-status 2>/dev/null)"; then
+    public_key_url="$(printf '%s\n' "$card_status" | sed -n 's/^URL of public key[[:space:]]*:[[:space:]]*//p' | head -n1)"
+    if [[ -n "$public_key_url" ]]; then
+      if gpg --fetch-keys "$public_key_url" &>/dev/null; then
+        echo "  Public key fetched from card URL: $public_key_url"
+      else
+        echo "  YubiKey detected and public key URL found, but fetch did not succeed: $public_key_url"
+      fi
     else
-      echo "  YubiKey detected, but public key fetch did not succeed."
+      echo "  YubiKey detected, but no public key URL is set on the card."
     fi
   else
     echo "  No YubiKey detected. Skipping."
@@ -290,13 +295,14 @@ if [[ "$CHEZMOI_DEFERRED" == true ]]; then
 elif [[ "$NETBIRD_DEFERRED" == true ]]; then
   echo "  3. Re-run setup.sh after reboot to install NetBird"
 else
-  echo "  3. sudo systemctl enable --now netbird"
+echo "  3. sudo systemctl enable --now netbird"
 fi
 echo "  4. netbird up --management-url https://your-netbird-management-url"
 echo "  5. If GPG key fetch was skipped above, plug in your YubiKey and run: gpg --card-status"
-echo "  6. If the public key was not fetched above, try manually: gpg-card -- fetch"
-echo "  7. If that still fails, import it manually: gpg --import /path/to/public-key.asc"
-echo "  8. flatpak run --command=bw com.bitwarden.desktop login   # one-time Bitwarden CLI login"
-echo "  9. bwu                                                # unlocks Bitwarden for this shell"
-echo " 10. chezmoi apply          # applies configs with secrets"
-echo " 11. cd /path/to/project && devpod up ."
+echo "  6. If the public key was not fetched above, try manually: gpg --card-edit  # then run: fetch"
+echo "  7. Or fetch directly from the card URL shown by gpg --card-status: gpg --fetch-keys <url>"
+echo "  8. If that still fails, import it manually: gpg --import /path/to/public-key.asc"
+echo "  9. flatpak run --command=bw com.bitwarden.desktop login   # one-time Bitwarden CLI login"
+echo " 10. bwu                                                # unlocks Bitwarden for this shell"
+echo " 11. chezmoi apply          # applies configs with secrets"
+echo " 12. cd /path/to/project && devpod up ."
