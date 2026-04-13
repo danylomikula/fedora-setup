@@ -40,7 +40,9 @@ It currently:
 - bootstraps `chezmoi`
 - pulls `fedora-dotfiles` over SSH
 - applies your dotfiles with `chezmoi --force` so the git source of truth wins during bootstrap
-- syncs the optional AI toolbox through the post-apply `chezmoi` hook
+- runs the optional AI toolbox sync explicitly after `chezmoi` completes
+
+For day-to-day `chezmoi update` runs outside `setup.sh`, the same AI toolbox sync still happens via the post-apply hook in `fedora-dotfiles`.
 
 If the currently booted `rpm-ostree` is older than the build that fixes the known Fedora subkeys bug, `setup.sh` defers NetBird until after reboot and asks you to run the script again.
 

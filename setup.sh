@@ -26,10 +26,24 @@ version_ge() {
 
 run_chezmoi() {
   if [[ -r /dev/tty ]]; then
-    GIT_SSH_COMMAND="$GIT_SSH_COMMAND_BASE" chezmoi --force "$@" </dev/tty
+    BOOTSTRAP_AI_TOOLBOX=false GIT_SSH_COMMAND="$GIT_SSH_COMMAND_BASE" chezmoi --force "$@" </dev/tty
   else
-    GIT_SSH_COMMAND="$GIT_SSH_COMMAND_BASE" chezmoi --force "$@"
+    BOOTSTRAP_AI_TOOLBOX=false GIT_SSH_COMMAND="$GIT_SSH_COMMAND_BASE" chezmoi --force "$@"
   fi
+}
+
+run_ai_toolbox_bootstrap() {
+  local source_dir script
+
+  [[ "${BOOTSTRAP_AI_TOOLBOX:-true}" == "true" ]] || return 0
+  command -v toolbox >/dev/null 2>&1 || return 0
+
+  source_dir="${CHEZMOI_SOURCE_DIR:-$HOME/.local/share/chezmoi}"
+  script="$source_dir/bootstrap-ai-toolbox.sh"
+
+  [[ -f "$script" ]] || return 0
+
+  bash "$script"
 }
 
 if [[ -z "$GITHUB_USER" ]]; then
@@ -215,6 +229,8 @@ else
   else
     run_chezmoi init --apply --guess-repo-url=false "$DOTFILES_SSH_URL"
   fi
+
+  run_ai_toolbox_bootstrap
 fi
 
 # -----------------------------------------------------------------------------
