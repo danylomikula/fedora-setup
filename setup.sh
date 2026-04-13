@@ -36,7 +36,11 @@ run_chezmoi() {
 run_ai_toolbox_bootstrap() {
   local source_dir script
 
-  source_dir="${CHEZMOI_SOURCE_DIR:-$HOME/.local/share/chezmoi}"
+  source_dir="${CHEZMOI_SOURCE_DIR:-}"
+  if [[ -z "$source_dir" ]] && command -v chezmoi &>/dev/null; then
+    source_dir="$(chezmoi source-path 2>/dev/null || true)"
+  fi
+  source_dir="${source_dir:-$HOME/.local/share/chezmoi}"
   script="$source_dir/bootstrap-ai-toolbox.sh"
 
   if ! command -v toolbox &>/dev/null; then
