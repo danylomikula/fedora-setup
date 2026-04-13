@@ -16,6 +16,7 @@ set -euo pipefail
 
 GITHUB_USER="${GITHUB_USER:-danylomikula}"
 DOTFILES_REPO="${DOTFILES_REPO:-fedora-dotfiles}"
+GITHUB_SSH_KEY="${GITHUB_SSH_KEY:-}"
 
 echo "=== Fedora Cosmic Atomic Bootstrap ==="
 
@@ -59,6 +60,10 @@ fi
 
 DOTFILES_SSH_URL="git@github.com:${GITHUB_USER}/${DOTFILES_REPO}.git"
 GIT_SSH_COMMAND_BASE='ssh -o StrictHostKeyChecking=accept-new'
+
+if [[ -n "$GITHUB_SSH_KEY" ]]; then
+  GIT_SSH_COMMAND_BASE="$GIT_SSH_COMMAND_BASE -o IdentityAgent=none -o IdentitiesOnly=yes -i $GITHUB_SSH_KEY"
+fi
 
 # -----------------------------------------------------------------------------
 # 1. Base OS + host packages (rpm-ostree)
@@ -215,7 +220,7 @@ else
       echo "Unable to access $DOTFILES_SSH_URL over SSH." >&2
       echo "Ensure your GitHub SSH key is already added to GitHub and available on this machine." >&2
       echo "If you use a resident FIDO/YubiKey SSH key, insert the key and run: cd ~/.ssh && ssh-keygen -K" >&2
-      echo "If your GitHub key uses a different filename, re-run with GITHUB_SSH_KEY=/path/to/private-key bash" >&2
+      echo "If your GitHub key needs to be selected explicitly, re-run with GITHUB_SSH_KEY=/path/to/private-key bash" >&2
       exit 1
     fi
   fi

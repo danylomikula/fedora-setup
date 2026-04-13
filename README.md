@@ -59,6 +59,13 @@ curl -fsSL https://raw.githubusercontent.com/danylomikula/fedora-setup/main/setu
   GITHUB_USER=your-github-user DOTFILES_REPO=fedora-dotfiles bash
 ```
 
+If the private dotfiles repo requires an explicit SSH key selection for bootstrap, pass it only for this run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/danylomikula/fedora-setup/main/setup.sh | \
+  GITHUB_SSH_KEY="$HOME/.ssh/id_ed25519_sk_rk_git-personal" bash
+```
+
 ## Private dotfiles repo
 
 `setup.sh` expects the dotfiles repo over SSH:
