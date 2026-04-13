@@ -40,9 +40,9 @@ It currently:
 - bootstraps `chezmoi`
 - pulls `fedora-dotfiles` over SSH
 - applies your dotfiles with `chezmoi --force` so the git source of truth wins during bootstrap
-- runs the optional AI toolbox sync explicitly after `chezmoi` completes
+- lets `fedora-dotfiles` run its post-apply scripts, including optional AI toolbox sync
 
-For day-to-day `chezmoi update` runs outside `setup.sh`, the same AI toolbox sync still happens via the post-apply hook in `fedora-dotfiles`.
+The AI toolbox sync lives in `fedora-dotfiles` as a normal `chezmoi run_after_*` hook, so the same behavior applies during `setup.sh`, `chezmoi apply`, and `chezmoi update`.
 
 If the currently booted `rpm-ostree` is older than the build that fixes the known Fedora subkeys bug, `setup.sh` defers NetBird until after reboot and asks you to run the script again.
 
@@ -74,6 +74,8 @@ cd ~/.ssh && ssh-keygen -K
 ```
 
 That is intended for resident SSH keys stored on a YubiKey.
+
+After `fedora-dotfiles` is applied, `setup.sh` writes a repo-local `core.sshCommand` into `~/.local/share/chezmoi/.git/config`, so the YubiKey-backed SSH key stays scoped to the private `fedora-dotfiles` repo instead of all GitHub SSH traffic.
 
 ## Day-to-day
 
