@@ -16,7 +16,6 @@ set -euo pipefail
 
 GITHUB_USER="${GITHUB_USER:-danylomikula}"
 DOTFILES_REPO="${DOTFILES_REPO:-fedora-dotfiles}"
-GITHUB_SSH_KEY="${GITHUB_SSH_KEY:-$HOME/.ssh/id_ed25519_sk_rk_git-personal}"
 
 echo "=== Fedora Cosmic Atomic Bootstrap ==="
 
@@ -59,11 +58,7 @@ if [[ -z "$GITHUB_USER" ]]; then
 fi
 
 DOTFILES_SSH_URL="git@github.com:${GITHUB_USER}/${DOTFILES_REPO}.git"
-GIT_SSH_COMMAND_BASE='ssh -o StrictHostKeyChecking=accept-new -o IdentityAgent=none'
-
-if [[ -f "$GITHUB_SSH_KEY" ]]; then
-  GIT_SSH_COMMAND_BASE="$GIT_SSH_COMMAND_BASE -i $GITHUB_SSH_KEY -o IdentitiesOnly=yes"
-fi
+GIT_SSH_COMMAND_BASE='ssh -o StrictHostKeyChecking=accept-new'
 
 # -----------------------------------------------------------------------------
 # 1. Base OS + host packages (rpm-ostree)
@@ -213,10 +208,6 @@ else
           cd "$HOME/.ssh"
           ssh-keygen -K </dev/tty
         ) || true
-
-        if [[ -f "$GITHUB_SSH_KEY" ]]; then
-          GIT_SSH_COMMAND_BASE="ssh -o StrictHostKeyChecking=accept-new -o IdentityAgent=none -i $GITHUB_SSH_KEY -o IdentitiesOnly=yes"
-        fi
       fi
     fi
 
@@ -233,10 +224,6 @@ else
     run_chezmoi update
   else
     run_chezmoi init --apply --guess-repo-url=false "$DOTFILES_SSH_URL"
-  fi
-
-  if [[ -d "$HOME/.local/share/chezmoi/.git" ]]; then
-    git -C "$HOME/.local/share/chezmoi" config core.sshCommand "$GIT_SSH_COMMAND_BASE" || true
   fi
 fi
 

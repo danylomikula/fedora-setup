@@ -75,8 +75,6 @@ cd ~/.ssh && ssh-keygen -K
 
 That is intended for resident SSH keys stored on a YubiKey.
 
-After `fedora-dotfiles` is applied, `setup.sh` writes a repo-local `core.sshCommand` into `~/.local/share/chezmoi/.git/config`, so the YubiKey-backed SSH key stays scoped to the private `fedora-dotfiles` repo instead of all GitHub SSH traffic.
-
 ## Day-to-day
 
 - run `setup.sh` again when you change host packages or other host bootstrap logic
