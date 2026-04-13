@@ -17,6 +17,7 @@ set -euo pipefail
 GITHUB_USER="${GITHUB_USER:-danylomikula}"
 DOTFILES_REPO="${DOTFILES_REPO:-fedora-dotfiles}"
 GITHUB_SSH_KEY="${GITHUB_SSH_KEY:-}"
+DEFAULT_GITHUB_SSH_KEY="$HOME/.ssh/id_ed25519_sk_rk_git-personal"
 
 echo "=== Fedora Cosmic Atomic Bootstrap ==="
 
@@ -60,6 +61,10 @@ fi
 
 DOTFILES_SSH_URL="git@github.com:${GITHUB_USER}/${DOTFILES_REPO}.git"
 GIT_SSH_COMMAND_BASE='ssh -o StrictHostKeyChecking=accept-new'
+
+if [[ -z "$GITHUB_SSH_KEY" && -f "$DEFAULT_GITHUB_SSH_KEY" ]]; then
+  GITHUB_SSH_KEY="$DEFAULT_GITHUB_SSH_KEY"
+fi
 
 if [[ -n "$GITHUB_SSH_KEY" ]]; then
   GIT_SSH_COMMAND_BASE="$GIT_SSH_COMMAND_BASE -o IdentityAgent=none -o IdentitiesOnly=yes -i $GITHUB_SSH_KEY"
@@ -213,6 +218,11 @@ else
           cd "$HOME/.ssh"
           ssh-keygen -K </dev/tty
         ) || true
+
+        if [[ -z "$GITHUB_SSH_KEY" && -f "$DEFAULT_GITHUB_SSH_KEY" ]]; then
+          GITHUB_SSH_KEY="$DEFAULT_GITHUB_SSH_KEY"
+          GIT_SSH_COMMAND_BASE="ssh -o StrictHostKeyChecking=accept-new -o IdentityAgent=none -o IdentitiesOnly=yes -i $GITHUB_SSH_KEY"
+        fi
       fi
     fi
 
