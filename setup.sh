@@ -26,9 +26,9 @@ version_ge() {
 
 run_chezmoi() {
   if [[ -r /dev/tty ]]; then
-    GIT_SSH_COMMAND="$GIT_SSH_COMMAND_BASE" chezmoi "$@" </dev/tty
+    GIT_SSH_COMMAND="$GIT_SSH_COMMAND_BASE" chezmoi --force "$@" </dev/tty
   else
-    GIT_SSH_COMMAND="$GIT_SSH_COMMAND_BASE" chezmoi "$@"
+    GIT_SSH_COMMAND="$GIT_SSH_COMMAND_BASE" chezmoi --force "$@"
   fi
 }
 

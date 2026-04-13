@@ -39,7 +39,7 @@ It currently:
 - installs `starship` and `devpod` in `~/.local/bin`
 - bootstraps `chezmoi`
 - pulls `fedora-dotfiles` over SSH
-- applies your dotfiles
+- applies your dotfiles with `chezmoi --force` so the git source of truth wins during bootstrap
 - syncs the optional AI toolbox through the post-apply `chezmoi` hook
 
 If the currently booted `rpm-ostree` is older than the build that fixes the known Fedora subkeys bug, `setup.sh` defers NetBird until after reboot and asks you to run the script again.
