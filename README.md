@@ -37,6 +37,7 @@ It currently:
 - installs GUI apps with Flatpak
 - enables the rootless Podman socket
 - installs `starship` and `devpod` in `~/.local/bin`
+- installs and updates the Zsh plugin checkouts used by your shell config under `~/.local/share/zsh/plugins`
 - bootstraps `chezmoi`
 - pulls `fedora-dotfiles` over SSH
 - applies your dotfiles with `chezmoi --force` so the git source of truth wins during bootstrap
@@ -83,5 +84,6 @@ That is intended for resident SSH keys stored on a YubiKey.
 ## Day-to-day
 
 - run `setup.sh` again when you change host packages or other host bootstrap logic
+- run `setup.sh` again when you want to update the managed Zsh plugin checkouts
 - run `chezmoi update` when you change `fedora-dotfiles`
 - update project-specific tooling in the project repo, not here

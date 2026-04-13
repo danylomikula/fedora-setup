@@ -33,6 +33,43 @@ run_chezmoi() {
   fi
 }
 
+sync_zsh_plugin() {
+  local name url dir
+
+  name="$1"
+  url="$2"
+  dir="${XDG_DATA_HOME:-$HOME/.local/share}/zsh/plugins/$name"
+
+  mkdir -p "$(dirname "$dir")"
+
+  if [[ -d "$dir/.git" ]]; then
+    git -C "$dir" remote set-url origin "$url"
+    if git -C "$dir" pull --ff-only --quiet; then
+      echo "  Updated $name"
+    else
+      echo "  Failed to update $name; leaving the existing checkout in place." >&2
+    fi
+    return 0
+  fi
+
+  if [[ -e "$dir" ]]; then
+    echo "  Skipping $name because $dir exists and is not a git checkout." >&2
+    return 0
+  fi
+
+  git clone --depth 1 "$url" "$dir" >/dev/null
+  echo "  Installed $name"
+}
+
+sync_zsh_plugins() {
+  sync_zsh_plugin zsh-autosuggestions https://github.com/zsh-users/zsh-autosuggestions.git
+  sync_zsh_plugin zsh-history-substring-search https://github.com/zsh-users/zsh-history-substring-search.git
+  sync_zsh_plugin zsh-completions https://github.com/zsh-users/zsh-completions.git
+  sync_zsh_plugin fast-syntax-highlighting https://github.com/zdharma-continuum/fast-syntax-highlighting.git
+  sync_zsh_plugin zsh-autocomplete https://github.com/marlonrichert/zsh-autocomplete.git
+  sync_zsh_plugin zsh-you-should-use https://github.com/MichaelAquilina/zsh-you-should-use.git
+}
+
 run_ai_toolbox_bootstrap() {
   local source_dir repo_dir script nested_script
 
@@ -266,9 +303,16 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# 5. DevPod CLI
+# 5. Zsh plugins
 # -----------------------------------------------------------------------------
-echo "--- [5/9] DevPod ---"
+echo "--- [5/10] Zsh plugins ---"
+
+sync_zsh_plugins
+
+# -----------------------------------------------------------------------------
+# 6. DevPod CLI
+# -----------------------------------------------------------------------------
+echo "--- [6/10] DevPod ---"
 
 if ! command -v devpod &>/dev/null; then
   mkdir -p "$HOME/.local/bin"
@@ -290,9 +334,9 @@ devpod context set-options default \
   -o TELEMETRY=false
 
 # -----------------------------------------------------------------------------
-# 6. YubiKey GPG public key (best-effort)
+# 7. YubiKey GPG public key (best-effort)
 # -----------------------------------------------------------------------------
-echo "--- [6/9] YubiKey GPG public key ---"
+echo "--- [7/10] YubiKey GPG public key ---"
 
 if command -v gpg &>/dev/null; then
   if card_status="$(LC_ALL=C gpg --card-status 2>/dev/null)"; then
@@ -314,18 +358,18 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# 7. Default shell → zsh
+# 8. Default shell → zsh
 # -----------------------------------------------------------------------------
-echo "--- [7/9] Default shell ---"
+echo "--- [8/10] Default shell ---"
 
 if command -v zsh &>/dev/null && [[ "$(getent passwd "$USER" | cut -d: -f7)" != "$(command -v zsh)" ]]; then
   sudo usermod -s "$(command -v zsh)" "$USER"
 fi
 
 # -----------------------------------------------------------------------------
-# 8. AI toolbox
+# 9. AI toolbox
 # -----------------------------------------------------------------------------
-echo "--- [8/9] AI toolbox ---"
+echo "--- [9/10] AI toolbox ---"
 
 if [[ "$CHEZMOI_DEFERRED" == false ]]; then
   run_ai_toolbox_bootstrap
@@ -334,7 +378,7 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# 9. Done
+# 10. Done
 # -----------------------------------------------------------------------------
 echo ""
 echo "=== Bootstrap complete ==="
