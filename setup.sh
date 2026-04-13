@@ -34,7 +34,7 @@ run_chezmoi() {
 }
 
 run_ai_toolbox_bootstrap() {
-  local source_dir script
+  local source_dir script nested_script
 
   source_dir="${CHEZMOI_SOURCE_DIR:-}"
   if [[ -z "$source_dir" ]] && command -v chezmoi &>/dev/null; then
@@ -49,8 +49,16 @@ run_ai_toolbox_bootstrap() {
   fi
 
   if [[ ! -f "$script" ]]; then
-    echo "  AI toolbox bootstrap script not found at $script. Skipping."
-    return 0
+    nested_script="$(find "$source_dir" -mindepth 2 -maxdepth 5 -name bootstrap-ai-toolbox.sh -print -quit 2>/dev/null || true)"
+    if [[ -n "$nested_script" ]]; then
+      echo "  Expected AI toolbox bootstrap script at $script, but found a nested copy at $nested_script." >&2
+      echo "  Your local chezmoi source tree looks corrupted from an older recursive layout." >&2
+      echo "  Fix it with: rm -rf ~/.local/share/chezmoi && re-run setup.sh" >&2
+    else
+      echo "  AI toolbox bootstrap script not found at $script." >&2
+      echo "  Ensure the latest fedora-dotfiles repo has been pushed and then re-run setup.sh." >&2
+    fi
+    return 1
   fi
 
   bash "$script"
