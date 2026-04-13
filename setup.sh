@@ -34,14 +34,25 @@ run_chezmoi() {
 }
 
 run_ai_toolbox_bootstrap() {
-  local source_dir script nested_script
+  local source_dir repo_dir script nested_script
 
   source_dir="${CHEZMOI_SOURCE_DIR:-}"
   if [[ -z "$source_dir" ]] && command -v chezmoi &>/dev/null; then
     source_dir="$(chezmoi source-path 2>/dev/null || true)"
   fi
   source_dir="${source_dir:-$HOME/.local/share/chezmoi}"
-  script="$source_dir/bootstrap-ai-toolbox.sh"
+  repo_dir="$source_dir"
+  script="$repo_dir/bootstrap-ai-toolbox.sh"
+
+  # With `.chezmoiroot = home`, `chezmoi source-path` resolves to the source
+  # root (`.../home`), while helper scripts such as bootstrap-ai-toolbox.sh
+  # remain at the repo root one level above it.
+  if [[ ! -f "$script" && -f "$repo_dir/.chezmoi.toml.tmpl" ]]; then
+    if [[ -f "$(dirname "$repo_dir")/.chezmoiroot" && -f "$(dirname "$repo_dir")/bootstrap-ai-toolbox.sh" ]]; then
+      repo_dir="$(dirname "$repo_dir")"
+      script="$repo_dir/bootstrap-ai-toolbox.sh"
+    fi
+  fi
 
   if ! command -v toolbox &>/dev/null; then
     echo "  toolbox command not found. Skipping AI toolbox bootstrap."
@@ -49,7 +60,7 @@ run_ai_toolbox_bootstrap() {
   fi
 
   if [[ ! -f "$script" ]]; then
-    nested_script="$(find "$source_dir" -mindepth 2 -maxdepth 5 -name bootstrap-ai-toolbox.sh -print -quit 2>/dev/null || true)"
+    nested_script="$(find "$repo_dir" -mindepth 2 -maxdepth 5 -name bootstrap-ai-toolbox.sh -print -quit 2>/dev/null || true)"
     if [[ -n "$nested_script" ]]; then
       echo "  Expected AI toolbox bootstrap script at $script, but found a nested copy at $nested_script." >&2
       echo "  Your local chezmoi source tree looks corrupted from an older recursive layout." >&2

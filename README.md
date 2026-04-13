@@ -40,7 +40,7 @@ It currently:
 - bootstraps `chezmoi`
 - pulls `fedora-dotfiles` over SSH
 - applies your dotfiles with `chezmoi --force` so the git source of truth wins during bootstrap
-- runs the optional AI toolbox bootstrap script explicitly from the `fedora-dotfiles` source directory resolved by `chezmoi source-path`
+- runs the optional AI toolbox bootstrap script explicitly from the `fedora-dotfiles` repo root; when `.chezmoiroot = home`, `chezmoi source-path` resolves to `home/`, so the helper script is taken from its parent repo directory
 
 If the currently booted `rpm-ostree` is older than the build that fixes the known Fedora subkeys bug, `setup.sh` defers NetBird until after reboot and asks you to run the script again.
 
