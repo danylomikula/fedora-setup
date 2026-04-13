@@ -32,6 +32,25 @@ run_chezmoi() {
   fi
 }
 
+run_ai_toolbox_bootstrap() {
+  local source_dir script
+
+  source_dir="${CHEZMOI_SOURCE_DIR:-$HOME/.local/share/chezmoi}"
+  script="$source_dir/bootstrap-ai-toolbox.sh"
+
+  if ! command -v toolbox &>/dev/null; then
+    echo "  toolbox command not found. Skipping AI toolbox bootstrap."
+    return 0
+  fi
+
+  if [[ ! -f "$script" ]]; then
+    echo "  AI toolbox bootstrap script not found at $script. Skipping."
+    return 0
+  fi
+
+  bash "$script"
+}
+
 if [[ -z "$GITHUB_USER" ]]; then
   if [[ -r /dev/tty ]]; then
     read -r -p "GitHub username for git@github.com:<user>/${DOTFILES_REPO}.git: " GITHUB_USER </dev/tty
@@ -49,7 +68,7 @@ fi
 # -----------------------------------------------------------------------------
 # 1. Base OS + host packages (rpm-ostree)
 # -----------------------------------------------------------------------------
-echo "--- [1/8] Base OS + host packages (rpm-ostree) ---"
+echo "--- [1/9] Base OS + host packages (rpm-ostree) ---"
 
 NETBIRD_REPO_FILE="/etc/yum.repos.d/netbird.repo"
 RPM_OSTREE_VERSION="$(rpm-ostree --version | awk -F"'" '/Version:/ {print $2}')"
@@ -133,7 +152,7 @@ fi
 # -----------------------------------------------------------------------------
 # 2. Flatpak GUI apps
 # -----------------------------------------------------------------------------
-echo "--- [2/8] Flatpak apps ---"
+echo "--- [2/9] Flatpak apps ---"
 
 flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
 
@@ -163,7 +182,7 @@ flatpak override --user com.visualstudio.code \
 # -----------------------------------------------------------------------------
 # 3. Podman socket (Docker-compatible API for VS Code + DevPod)
 # -----------------------------------------------------------------------------
-echo "--- [3/8] Podman socket ---"
+echo "--- [3/9] Podman socket ---"
 
 systemctl --user enable --now podman.socket
 export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/podman/podman.sock"
@@ -171,7 +190,7 @@ export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/podman/podman.sock"
 # -----------------------------------------------------------------------------
 # 4. Host CLIs + Chezmoi
 # -----------------------------------------------------------------------------
-echo "--- [4/8] Host CLIs + Chezmoi ---"
+echo "--- [4/9] Host CLIs + Chezmoi ---"
 
 mkdir -p "$HOME/.local/bin"
 export PATH="$HOME/.local/bin:$PATH"
@@ -224,7 +243,7 @@ fi
 # -----------------------------------------------------------------------------
 # 5. DevPod CLI
 # -----------------------------------------------------------------------------
-echo "--- [5/8] DevPod ---"
+echo "--- [5/9] DevPod ---"
 
 if ! command -v devpod &>/dev/null; then
   mkdir -p "$HOME/.local/bin"
@@ -248,7 +267,7 @@ devpod context set-options default \
 # -----------------------------------------------------------------------------
 # 6. YubiKey GPG public key (best-effort)
 # -----------------------------------------------------------------------------
-echo "--- [6/8] YubiKey GPG public key ---"
+echo "--- [6/9] YubiKey GPG public key ---"
 
 if command -v gpg &>/dev/null; then
   if card_status="$(LC_ALL=C gpg --card-status 2>/dev/null)"; then
@@ -272,14 +291,25 @@ fi
 # -----------------------------------------------------------------------------
 # 7. Default shell → zsh
 # -----------------------------------------------------------------------------
-echo "--- [7/8] Default shell ---"
+echo "--- [7/9] Default shell ---"
 
 if command -v zsh &>/dev/null && [[ "$(getent passwd "$USER" | cut -d: -f7)" != "$(command -v zsh)" ]]; then
   sudo usermod -s "$(command -v zsh)" "$USER"
 fi
 
 # -----------------------------------------------------------------------------
-# 8. Done
+# 8. AI toolbox
+# -----------------------------------------------------------------------------
+echo "--- [8/9] AI toolbox ---"
+
+if [[ "$CHEZMOI_DEFERRED" == false ]]; then
+  run_ai_toolbox_bootstrap
+else
+  echo "  Chezmoi was deferred. Re-run setup.sh after reboot before bootstrapping AI tools."
+fi
+
+# -----------------------------------------------------------------------------
+# 9. Done
 # -----------------------------------------------------------------------------
 echo ""
 echo "=== Bootstrap complete ==="
