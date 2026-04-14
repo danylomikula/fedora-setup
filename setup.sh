@@ -196,7 +196,7 @@ for pkg in "${LAYERED_PACKAGES[@]}"; do
 done
 
 if [[ ${#NEEDED[@]} -gt 0 ]]; then
-  sudo rpm-ostree install --idempotent "${NEEDED[@]}"
+  sudo rpm-ostree install --idempotent --allow-inactive "${NEEDED[@]}"
   NEEDS_REBOOT=true
 else
   echo "  All packages already installed."
