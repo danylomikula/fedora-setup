@@ -112,13 +112,6 @@ run_ai_toolbox_bootstrap() {
   bash "$script"
 }
 
-if [[ -z "$GITHUB_USER" ]]; then
-  if [[ -r /dev/tty ]]; then
-    read -r -p "GitHub username for git@github.com:<user>/${DOTFILES_REPO}.git: " GITHUB_USER </dev/tty
-  fi
-  [[ -n "$GITHUB_USER" ]] || { echo "GITHUB_USER is required. Re-run the script and enter it when prompted, or pass GITHUB_USER=your-github-user to bash." >&2; exit 1; }
-fi
-
 DOTFILES_SSH_URL="git@github.com:${GITHUB_USER}/${DOTFILES_REPO}.git"
 GIT_SSH_COMMAND_BASE='ssh -o StrictHostKeyChecking=accept-new'
 
@@ -133,7 +126,7 @@ fi
 # -----------------------------------------------------------------------------
 # 1. Base OS + host packages (rpm-ostree)
 # -----------------------------------------------------------------------------
-echo "--- [1/9] Base OS + host packages (rpm-ostree) ---"
+echo "--- [1/10] Base OS + host packages (rpm-ostree) ---"
 
 NETBIRD_REPO_FILE="/etc/yum.repos.d/netbird.repo"
 RPM_OSTREE_VERSION="$(rpm-ostree --version | awk -F"'" '/Version:/ {print $2}')"
@@ -217,7 +210,7 @@ fi
 # -----------------------------------------------------------------------------
 # 2. Flatpak GUI apps
 # -----------------------------------------------------------------------------
-echo "--- [2/9] Flatpak apps ---"
+echo "--- [2/10] Flatpak apps ---"
 
 flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
 
@@ -233,9 +226,16 @@ FLATPAK_APPS=(
   org.signal.Signal               # messaging
 )
 
+flatpak_failures=()
 for app in "${FLATPAK_APPS[@]}"; do
-  flatpak install -y --noninteractive flathub "$app" 2>/dev/null || true
+  if ! flatpak install -y --noninteractive flathub "$app"; then
+    flatpak_failures+=("$app")
+    echo "  Failed to install $app" >&2
+  fi
 done
+if [[ ${#flatpak_failures[@]} -gt 0 ]]; then
+  echo "  ${#flatpak_failures[@]} Flatpak app(s) failed to install: ${flatpak_failures[*]}" >&2
+fi
 
 # VS Code Flatpak needs access to the home directory and rootless Podman socket
 flatpak override --user com.visualstudio.code \
@@ -247,15 +247,15 @@ flatpak override --user com.visualstudio.code \
 # -----------------------------------------------------------------------------
 # 3. Podman socket (Docker-compatible API for VS Code + DevPod)
 # -----------------------------------------------------------------------------
-echo "--- [3/9] Podman socket ---"
+echo "--- [3/10] Podman socket ---"
 
 systemctl --user enable --now podman.socket
-export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/podman/podman.sock"
+export DOCKER_HOST="unix://${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman.sock"
 
 # -----------------------------------------------------------------------------
 # 4. Host CLIs + Chezmoi
 # -----------------------------------------------------------------------------
-echo "--- [4/9] Host CLIs + Chezmoi ---"
+echo "--- [4/10] Host CLIs + Chezmoi ---"
 
 mkdir -p "$HOME/.local/bin"
 export PATH="$HOME/.local/bin:$PATH"
@@ -398,7 +398,7 @@ if [[ "$CHEZMOI_DEFERRED" == true ]]; then
 elif [[ "$NETBIRD_DEFERRED" == true ]]; then
   echo "  3. Re-run setup.sh after reboot to install NetBird"
 else
-echo "  3. sudo systemctl enable --now netbird"
+  echo "  3. sudo systemctl enable --now netbird"
 fi
 echo "  4. netbird up --management-url https://your-netbird-management-url"
 echo "  5. If GPG key fetch was skipped above, plug in your YubiKey and run: gpg --card-status"
