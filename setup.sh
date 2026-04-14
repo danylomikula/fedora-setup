@@ -316,6 +316,27 @@ echo "--- [3/10] Podman socket ---"
 systemctl --user enable --now podman.socket
 export DOCKER_HOST="unix://${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman.sock"
 
+# Raise rootless Podman pids_limit so heavy container workloads (npm install,
+# node-gyp, dnf inside toolbox) don't hit EAGAIN on pthread_create. The Podman
+# default (2048) easily spikes during thread bursts and crashes GLib/Go tools.
+containers_conf_dir="$HOME/.config/containers"
+containers_conf="$containers_conf_dir/containers.conf"
+mkdir -p "$containers_conf_dir"
+if [[ ! -f "$containers_conf" ]]; then
+  cat > "$containers_conf" <<'EOF'
+[containers]
+pids_limit = 0
+EOF
+  echo "  Created $containers_conf with pids_limit = 0"
+elif ! grep -qE '^[[:space:]]*pids_limit[[:space:]]*=' "$containers_conf"; then
+  if grep -qE '^\[containers\]' "$containers_conf"; then
+    sed -i '/^\[containers\]/a pids_limit = 0' "$containers_conf"
+  else
+    printf '\n[containers]\npids_limit = 0\n' >> "$containers_conf"
+  fi
+  echo "  Added pids_limit = 0 to $containers_conf"
+fi
+
 # -----------------------------------------------------------------------------
 # 4. Host CLIs + Chezmoi
 # -----------------------------------------------------------------------------
@@ -460,6 +481,17 @@ fi
 # 9. AI toolbox
 # -----------------------------------------------------------------------------
 echo "--- [9/10] AI toolbox ---"
+
+# If an existing 'ai' toolbox was created before containers.conf was updated,
+# its PidsLimit is still the old default and bootstrap will crash again.
+# Recreate it so the new limit applies.
+if command -v podman &>/dev/null && podman container exists ai 2>/dev/null; then
+  ai_pids_limit="$(podman inspect ai --format '{{.HostConfig.PidsLimit}}' 2>/dev/null || echo 0)"
+  if [[ "$ai_pids_limit" =~ ^[0-9]+$ ]] && (( ai_pids_limit > 0 && ai_pids_limit <= 2048 )); then
+    echo "  Existing 'ai' toolbox has PidsLimit=$ai_pids_limit; recreating to pick up new containers.conf"
+    toolbox rm -f ai &>/dev/null || podman rm -f ai &>/dev/null || true
+  fi
+fi
 
 if [[ "$CHEZMOI_DEFERRED" == false ]]; then
   run_ai_toolbox_bootstrap
