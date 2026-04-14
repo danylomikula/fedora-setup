@@ -406,7 +406,14 @@ devpod context set-options default \
 echo "--- [7/10] YubiKey GPG public key ---"
 
 if command -v gpg &>/dev/null; then
-  if card_status="$(LC_ALL=C gpg --card-status 2>/dev/null)"; then
+  # scdaemon may hold a stale USB lock (e.g., after ssh-keygen -K or browser
+  # FIDO use) and cause "No such device". Restart it before querying the card.
+  gpgconf --kill scdaemon &>/dev/null || true
+
+  card_output="$(LC_ALL=C gpg --card-status 2>&1)"
+  card_rc=$?
+  if (( card_rc == 0 )); then
+    card_status="$card_output"
     public_key_url="$(printf '%s\n' "$card_status" | sed -n 's/^URL of public key[[:space:]]*:[[:space:]]*//p' | head -n1)"
     if [[ -n "$public_key_url" ]]; then
       if gpg --fetch-keys "$public_key_url" &>/dev/null; then
@@ -418,7 +425,8 @@ if command -v gpg &>/dev/null; then
       echo "  YubiKey detected, but no public key URL is set on the card."
     fi
   else
-    echo "  No YubiKey detected. Skipping."
+    echo "  No YubiKey detected. Skipping." >&2
+    printf '%s\n' "$card_output" | sed 's/^/    /' >&2
   fi
 else
   echo "  GPG smartcard tools are not available yet. Skipping."
