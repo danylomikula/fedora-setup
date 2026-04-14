@@ -65,6 +65,20 @@ curl -fsSL https://raw.githubusercontent.com/danylomikula/fedora-setup/main/setu
   GITHUB_SSH_KEY="$HOME/.ssh/id_ed25519_sk_rk_git-personal" bash
 ```
 
+If you need to clone this repo with an explicit SSH key and persist that choice locally:
+
+```bash
+GIT_SSH_COMMAND='ssh -o IdentityAgent=none -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519_sk_rk_git-personal' \
+git clone git@github.com:danylomikula/fedora-setup.git && \
+git -C fedora-setup config core.sshCommand 'ssh -o IdentityAgent=none -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519_sk_rk_git-personal'
+```
+
+Local run with full trace and a saved log:
+
+```bash
+bash -x ./setup.sh 2>&1 | tee /tmp/fedora-setup.log
+```
+
 ## Private dotfiles repo
 
 `setup.sh` expects the dotfiles repo over SSH:

@@ -406,15 +406,21 @@ devpod context set-options default \
 echo "--- [7/10] YubiKey GPG public key ---"
 
 if command -v gpg &>/dev/null; then
-  # scdaemon may hold a stale USB lock (e.g., after ssh-keygen -K or browser
-  # FIDO use) and cause "No such device". Restart it before querying the card.
-  gpgconf --kill scdaemon &>/dev/null || true
+  # scdaemon/pcscd can race after prior FIDO use (e.g., SSH-SK clone) or hold
+  # a stale USB lock, making the first gpg call return "No such device".
+  # Retry up to 5 times, killing scdaemon between attempts so gpg-agent
+  # respawns it fresh, and giving pcscd a moment to see the reader again.
+  # `timeout` also prevents indefinite hangs if pinentry tries to open a GUI.
+  card_output=""
+  card_rc=1
+  for attempt in 1 2 3 4 5; do
+    gpgconf --kill scdaemon &>/dev/null || true
+    sleep 1
+    card_output="$(LC_ALL=C timeout 10 gpg --card-status 2>&1)"
+    card_rc=$?
+    (( card_rc == 0 )) && break
+  done
 
-  # Bound the call: gpg can hang indefinitely if pinentry tries to open a GUI
-  # dialog in a context where one is unavailable, or if the CCID interface is
-  # briefly held by another process.
-  card_output="$(LC_ALL=C timeout 15 gpg --card-status 2>&1)"
-  card_rc=$?
   if (( card_rc == 0 )); then
     card_status="$card_output"
     public_key_url="$(printf '%s\n' "$card_status" | sed -n 's/^URL of public key[[:space:]]*:[[:space:]]*//p' | head -n1)"
