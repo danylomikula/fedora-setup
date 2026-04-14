@@ -410,13 +410,16 @@ if command -v gpg &>/dev/null; then
   # FIDO use) and cause "No such device". Restart it before querying the card.
   gpgconf --kill scdaemon &>/dev/null || true
 
-  card_output="$(LC_ALL=C gpg --card-status 2>&1)"
+  # Bound the call: gpg can hang indefinitely if pinentry tries to open a GUI
+  # dialog in a context where one is unavailable, or if the CCID interface is
+  # briefly held by another process.
+  card_output="$(LC_ALL=C timeout 15 gpg --card-status 2>&1)"
   card_rc=$?
   if (( card_rc == 0 )); then
     card_status="$card_output"
     public_key_url="$(printf '%s\n' "$card_status" | sed -n 's/^URL of public key[[:space:]]*:[[:space:]]*//p' | head -n1)"
     if [[ -n "$public_key_url" ]]; then
-      if gpg --fetch-keys "$public_key_url" &>/dev/null; then
+      if timeout 30 gpg --fetch-keys "$public_key_url" &>/dev/null; then
         echo "  Public key fetched from card URL: $public_key_url"
       else
         echo "  YubiKey detected and public key URL found, but fetch did not succeed: $public_key_url"
@@ -424,6 +427,9 @@ if command -v gpg &>/dev/null; then
     else
       echo "  YubiKey detected, but no public key URL is set on the card."
     fi
+  elif (( card_rc == 124 )); then
+    echo "  gpg --card-status timed out. Skipping." >&2
+    echo "  Retry manually: gpgconf --kill scdaemon && gpg --card-status" >&2
   else
     echo "  No YubiKey detected. Skipping." >&2
     printf '%s\n' "$card_output" | sed 's/^/    /' >&2
