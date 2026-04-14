@@ -19,6 +19,18 @@ DOTFILES_REPO="${DOTFILES_REPO:-fedora-dotfiles}"
 GITHUB_SSH_KEY="${GITHUB_SSH_KEY:-}"
 DEFAULT_GITHUB_SSH_KEY="$HOME/.ssh/id_ed25519_sk_rk_git-personal"
 
+# Managed zsh plugins. Entries are "name|git-url". This array is the source of
+# truth: plugins listed here are installed/updated, anything else under the
+# managed plugins directory is removed by prune_zsh_plugins.
+ZSH_PLUGINS=(
+  "zsh-autosuggestions|https://github.com/zsh-users/zsh-autosuggestions.git"
+  "zsh-history-substring-search|https://github.com/zsh-users/zsh-history-substring-search.git"
+  "zsh-completions|https://github.com/zsh-users/zsh-completions.git"
+  "zsh-syntax-highlighting|https://github.com/zsh-users/zsh-syntax-highlighting.git"
+  "zsh-autocomplete|https://github.com/marlonrichert/zsh-autocomplete.git"
+  "zsh-you-should-use|https://github.com/MichaelAquilina/zsh-you-should-use.git"
+)
+
 echo "=== Fedora Cosmic Atomic Bootstrap ==="
 
 version_ge() {
@@ -125,12 +137,32 @@ select_github_ssh_key() {
 }
 
 sync_zsh_plugins() {
-  sync_zsh_plugin zsh-autosuggestions https://github.com/zsh-users/zsh-autosuggestions.git
-  sync_zsh_plugin zsh-history-substring-search https://github.com/zsh-users/zsh-history-substring-search.git
-  sync_zsh_plugin zsh-completions https://github.com/zsh-users/zsh-completions.git
-  sync_zsh_plugin fast-syntax-highlighting https://github.com/zdharma-continuum/fast-syntax-highlighting.git
-  sync_zsh_plugin zsh-autocomplete https://github.com/marlonrichert/zsh-autocomplete.git
-  sync_zsh_plugin zsh-you-should-use https://github.com/MichaelAquilina/zsh-you-should-use.git
+  local entry name url
+  for entry in "${ZSH_PLUGINS[@]}"; do
+    name="${entry%%|*}"
+    url="${entry#*|}"
+    sync_zsh_plugin "$name" "$url"
+  done
+}
+
+prune_zsh_plugins() {
+  local base entry name dir present
+  base="${XDG_DATA_HOME:-$HOME/.local/share}/zsh/plugins"
+  [[ -d "$base" ]] || return 0
+
+  shopt -s nullglob
+  for dir in "$base"/*/; do
+    name="$(basename "$dir")"
+    present=0
+    for entry in "${ZSH_PLUGINS[@]}"; do
+      [[ "${entry%%|*}" == "$name" ]] && { present=1; break; }
+    done
+    if (( present == 0 )) && [[ -d "$dir/.git" ]]; then
+      echo "  Removing unmanaged zsh plugin: $name"
+      rm -rf "$dir"
+    fi
+  done
+  shopt -u nullglob
 }
 
 run_ai_toolbox_bootstrap() {
@@ -266,6 +298,34 @@ else
   echo "  All packages already installed."
 fi
 
+# LAYERED_PACKAGES is the source of truth: remove anything the user previously
+# layered but is no longer in the array. netbird is preserved when its install
+# was deferred this run so an older rpm-ostree doesn't accidentally drop it.
+REQUESTED_LAYERED="$(sudo rpm-ostree status --json 2>/dev/null \
+  | python3 -c 'import json,sys; d=json.load(sys.stdin); print("\n".join(d["deployments"][0].get("requested-packages",[])))' 2>/dev/null || true)"
+
+if [[ -n "$REQUESTED_LAYERED" ]]; then
+  declare -A DESIRED_LAYERED=()
+  for pkg in "${LAYERED_PACKAGES[@]}"; do
+    DESIRED_LAYERED["$pkg"]=1
+  done
+  if [[ "$NETBIRD_DEFERRED" == true ]]; then
+    DESIRED_LAYERED[netbird]=1
+  fi
+
+  TO_REMOVE=()
+  while IFS= read -r pkg; do
+    [[ -z "$pkg" ]] && continue
+    [[ -n "${DESIRED_LAYERED[$pkg]:-}" ]] || TO_REMOVE+=("$pkg")
+  done <<<"$REQUESTED_LAYERED"
+
+  if (( ${#TO_REMOVE[@]} > 0 )); then
+    echo "  Removing layered packages not in LAYERED_PACKAGES: ${TO_REMOVE[*]}"
+    sudo rpm-ostree uninstall "${TO_REMOVE[@]}"
+    NEEDS_REBOOT=true
+  fi
+fi
+
 # The service is only available after reboot if netbird was newly layered.
 if [[ "$NETBIRD_DEFERRED" == false ]] && systemctl cat netbird &>/dev/null; then
   sudo systemctl enable --now netbird
@@ -299,6 +359,25 @@ for app in "${FLATPAK_APPS[@]}"; do
 done
 if [[ ${#flatpak_failures[@]} -gt 0 ]]; then
   echo "  ${#flatpak_failures[@]} Flatpak app(s) failed to install: ${flatpak_failures[*]}" >&2
+fi
+
+# FLATPAK_APPS is the source of truth for flathub-origin apps: remove any
+# flathub app that was previously installed but is no longer in the array.
+# Apps from other remotes (e.g., fedora, vendor flatpak repos) are left alone.
+declare -A DESIRED_FLATPAKS=()
+for app in "${FLATPAK_APPS[@]}"; do
+  DESIRED_FLATPAKS["$app"]=1
+done
+
+flatpak_removals=()
+while IFS=$'\t' read -r app_id origin; do
+  [[ -z "$app_id" || "$origin" != "flathub" ]] && continue
+  [[ -n "${DESIRED_FLATPAKS[$app_id]:-}" ]] || flatpak_removals+=("$app_id")
+done < <(flatpak list --app --columns=application,origin 2>/dev/null || true)
+
+if (( ${#flatpak_removals[@]} > 0 )); then
+  echo "  Removing Flatpak apps not in FLATPAK_APPS: ${flatpak_removals[*]}"
+  flatpak uninstall -y --noninteractive "${flatpak_removals[@]}" || true
 fi
 
 # VS Code Flatpak needs access to the home directory and rootless Podman socket
@@ -399,6 +478,7 @@ fi
 echo "--- [5/10] Zsh plugins ---"
 
 sync_zsh_plugins
+prune_zsh_plugins
 
 # -----------------------------------------------------------------------------
 # 6. DevPod CLI
@@ -429,44 +509,52 @@ devpod context set-options default \
 # -----------------------------------------------------------------------------
 echo "--- [7/10] YubiKey GPG public key ---"
 
-if command -v gpg &>/dev/null; then
-  # scdaemon/pcscd can race after prior FIDO use (e.g., SSH-SK clone) or hold
-  # a stale USB lock, making the first gpg call return "No such device".
-  # Retry up to 5 times, killing scdaemon between attempts so gpg-agent
-  # respawns it fresh, and giving pcscd a moment to see the reader again.
-  # `timeout` also prevents indefinite hangs if pinentry tries to open a GUI.
-  card_output=""
-  card_rc=1
-  for attempt in 1 2 3 4 5; do
-    gpgconf --kill scdaemon &>/dev/null || true
-    sleep 1
-    card_output="$(LC_ALL=C timeout 10 gpg --card-status 2>&1)"
-    card_rc=$?
-    (( card_rc == 0 )) && break
-  done
-
-  if (( card_rc == 0 )); then
-    card_status="$card_output"
-    public_key_url="$(printf '%s\n' "$card_status" | sed -n 's/^URL of public key[[:space:]]*:[[:space:]]*//p' | head -n1)"
-    if [[ -n "$public_key_url" ]]; then
-      if timeout 30 gpg --fetch-keys "$public_key_url" &>/dev/null; then
-        echo "  Public key fetched from card URL: $public_key_url"
+# Best-effort: never fail the whole bootstrap just because the YubiKey is
+# absent, scdaemon is unhappy, or keys.openpgp.org is unreachable. Any errors
+# inside the subshell are contained.
+(
+  if command -v gpg &>/dev/null; then
+    # scdaemon/pcscd can race after prior FIDO use (e.g., SSH-SK clone) or hold
+    # a stale USB lock, making the first gpg call return "No such device".
+    # Retry up to 5 times, killing scdaemon between attempts so gpg-agent
+    # respawns it fresh, and giving pcscd a moment to see the reader again.
+    # `timeout` also prevents indefinite hangs if pinentry tries to open a GUI.
+    card_output=""
+    card_rc=1
+    for attempt in 1 2 3 4 5; do
+      gpgconf --kill scdaemon &>/dev/null || true
+      sleep 1
+      if card_output="$(LC_ALL=C timeout 10 gpg --card-status 2>&1)"; then
+        card_rc=0
+        break
       else
-        echo "  YubiKey detected and public key URL found, but fetch did not succeed: $public_key_url"
+        card_rc=$?
       fi
+    done
+
+    if (( card_rc == 0 )); then
+      card_status="$card_output"
+      public_key_url="$(printf '%s\n' "$card_status" | sed -n 's/^URL of public key[[:space:]]*:[[:space:]]*//p' | head -n1)"
+      if [[ -n "$public_key_url" ]]; then
+        if timeout 30 gpg --fetch-keys "$public_key_url" &>/dev/null; then
+          echo "  Public key fetched from card URL: $public_key_url"
+        else
+          echo "  YubiKey detected and public key URL found, but fetch did not succeed: $public_key_url"
+        fi
+      else
+        echo "  YubiKey detected, but no public key URL is set on the card."
+      fi
+    elif (( card_rc == 124 )); then
+      echo "  gpg --card-status timed out. Skipping." >&2
+      echo "  Retry manually: gpgconf --kill scdaemon && gpg --card-status" >&2
     else
-      echo "  YubiKey detected, but no public key URL is set on the card."
+      echo "  No YubiKey detected. Skipping." >&2
+      printf '%s\n' "$card_output" | sed 's/^/    /' >&2
     fi
-  elif (( card_rc == 124 )); then
-    echo "  gpg --card-status timed out. Skipping." >&2
-    echo "  Retry manually: gpgconf --kill scdaemon && gpg --card-status" >&2
   else
-    echo "  No YubiKey detected. Skipping." >&2
-    printf '%s\n' "$card_output" | sed 's/^/    /' >&2
+    echo "  GPG smartcard tools are not available yet. Skipping."
   fi
-else
-  echo "  GPG smartcard tools are not available yet. Skipping."
-fi
+) || echo "  YubiKey step had errors; continuing." >&2
 
 # -----------------------------------------------------------------------------
 # 8. Default shell → zsh
@@ -494,7 +582,26 @@ if command -v podman &>/dev/null && podman container exists ai 2>/dev/null; then
 fi
 
 if [[ "$CHEZMOI_DEFERRED" == false ]]; then
-  run_ai_toolbox_bootstrap
+  ai_bootstrap_ok=false
+  for ai_attempt in 1 2 3; do
+    if run_ai_toolbox_bootstrap; then
+      ai_bootstrap_ok=true
+      break
+    fi
+    if (( ai_attempt < 3 )); then
+      echo "  AI toolbox bootstrap failed on attempt $ai_attempt/3; cleaning up and retrying..." >&2
+      # Conmon exit-file timeouts and stale overlay locks usually clear after
+      # removing the container and letting podman drop its transient state.
+      toolbox rm -f ai &>/dev/null || podman rm -f ai &>/dev/null || true
+      sleep 3
+    fi
+  done
+  if [[ "$ai_bootstrap_ok" == false ]]; then
+    echo "  AI toolbox bootstrap failed after 3 attempts; continuing with the rest of setup." >&2
+    echo "  Retry manually: toolbox rm -f ai && bash ~/.local/share/chezmoi/bootstrap-ai-toolbox.sh" >&2
+    echo "  If the error is a conmon exit-file timeout, also try:" >&2
+    echo "    systemctl --user restart podman.socket && podman system migrate" >&2
+  fi
 else
   echo "  Chezmoi was deferred. Re-run setup.sh after reboot before bootstrapping AI tools."
 fi
