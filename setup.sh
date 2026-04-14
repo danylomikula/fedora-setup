@@ -235,6 +235,7 @@ LAYERED_PACKAGES=(
   gnupg2-scdaemon        # YubiKey GPG smartcard for signed commits
   opensc                 # PKCS#11 for YubiKey SSH
   yubikey-manager        # ykman CLI
+  openssh-askpass        # GUI prompts/notifications for SSH FIDO key use
   chezmoi                # dotfiles manager
 )
 
@@ -321,10 +322,12 @@ export DOCKER_HOST="unix://${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/podman/podman.
 echo "--- [4/10] Host CLIs + Chezmoi ---"
 
 mkdir -p "$HOME/.local/bin"
-export PATH="$HOME/.local/bin:$PATH"
+case ":$PATH:" in
+  *":$HOME/.local/bin:"*) ;;
+  *) export PATH="$HOME/.local/bin:$PATH" ;;
+esac
 
 curl -fsSL https://starship.rs/install.sh | sh -s -- -y -b "$HOME/.local/bin"
-export PATH="$HOME/.local/bin:$PATH"
 
 if ! command -v chezmoi &>/dev/null; then
   CHEZMOI_DEFERRED=true
