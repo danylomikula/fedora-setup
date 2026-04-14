@@ -61,6 +61,69 @@ sync_zsh_plugin() {
   echo "  Installed $name"
 }
 
+discover_ssh_private_keys() {
+  local key name
+  shopt -s nullglob
+  for key in "$HOME/.ssh"/*; do
+    [[ -f "$key" ]] || continue
+    name="$(basename "$key")"
+    case "$name" in
+      *.pub|known_hosts|known_hosts.old|config|authorized_keys|authorized_keys2|environment) continue ;;
+    esac
+    if head -n1 "$key" 2>/dev/null | grep -qE '^-----BEGIN '; then
+      printf '%s\n' "$key"
+    fi
+  done
+  shopt -u nullglob
+}
+
+select_github_ssh_key() {
+  local -a keys=()
+  local key default_idx=0 i prompt choice
+
+  while IFS= read -r key; do
+    keys+=("$key")
+  done < <(discover_ssh_private_keys)
+
+  (( ${#keys[@]} == 0 )) && return 1
+
+  if (( ${#keys[@]} == 1 )); then
+    printf '%s\n' "${keys[0]}"
+    return 0
+  fi
+
+  if [[ ! -r /dev/tty ]]; then
+    for key in "${keys[@]}"; do
+      [[ "$key" == "$DEFAULT_GITHUB_SSH_KEY" ]] && { printf '%s\n' "$key"; return 0; }
+    done
+    return 1
+  fi
+
+  {
+    echo "Multiple SSH keys found in ~/.ssh — select one for GitHub:"
+    i=1
+    for key in "${keys[@]}"; do
+      if [[ "$key" == "$DEFAULT_GITHUB_SSH_KEY" ]]; then
+        printf '  %d) %s (default)\n' "$i" "$(basename "$key")"
+        default_idx="$i"
+      else
+        printf '  %d) %s\n' "$i" "$(basename "$key")"
+      fi
+      ((i++))
+    done
+  } >&2
+
+  (( default_idx == 0 )) && default_idx=1
+  prompt="Enter number [$default_idx]: "
+  read -r -p "$prompt" choice </dev/tty
+  choice="${choice:-$default_idx}"
+  if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#keys[@]} )); then
+    printf '%s\n' "${keys[choice-1]}"
+    return 0
+  fi
+  return 1
+}
+
 sync_zsh_plugins() {
   sync_zsh_plugin zsh-autosuggestions https://github.com/zsh-users/zsh-autosuggestions.git
   sync_zsh_plugin zsh-history-substring-search https://github.com/zsh-users/zsh-history-substring-search.git
@@ -279,8 +342,12 @@ else
           ssh-keygen -K </dev/tty
         ) || true
 
-        if [[ -z "$GITHUB_SSH_KEY" && -f "$DEFAULT_GITHUB_SSH_KEY" ]]; then
-          GITHUB_SSH_KEY="$DEFAULT_GITHUB_SSH_KEY"
+        if [[ -z "$GITHUB_SSH_KEY" ]]; then
+          GITHUB_SSH_KEY="$(select_github_ssh_key || true)"
+        fi
+
+        if [[ -n "$GITHUB_SSH_KEY" ]]; then
+          echo "  Using SSH key: $GITHUB_SSH_KEY"
           GIT_SSH_COMMAND_BASE="ssh -o StrictHostKeyChecking=accept-new -o IdentityAgent=none -o IdentitiesOnly=yes -i $GITHUB_SSH_KEY"
         fi
       fi
