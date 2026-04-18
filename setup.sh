@@ -19,17 +19,20 @@ DOTFILES_REPO="${DOTFILES_REPO:-fedora-dotfiles}"
 GITHUB_SSH_KEY="${GITHUB_SSH_KEY:-}"
 DEFAULT_GITHUB_SSH_KEY="$HOME/.ssh/id_ed25519_sk_rk_git-personal"
 
-# Managed zsh plugins. Entries are "name|git-url". This array is the source of
-# truth: plugins listed here are installed/updated, anything else under the
-# managed plugins directory is removed by prune_zsh_plugins.
-ZSH_PLUGINS=(
-  "zsh-autosuggestions|https://github.com/zsh-users/zsh-autosuggestions.git"
-  "zsh-history-substring-search|https://github.com/zsh-users/zsh-history-substring-search.git"
-  "zsh-completions|https://github.com/zsh-users/zsh-completions.git"
-  "zsh-syntax-highlighting|https://github.com/zsh-users/zsh-syntax-highlighting.git"
-  "zsh-autocomplete|https://github.com/marlonrichert/zsh-autocomplete.git"
-  "zsh-you-should-use|https://github.com/MichaelAquilina/zsh-you-should-use.git"
-)
+# antidote (zsh plugin manager) — installed via git clone at ~/.antidote.
+# The plugin list itself is owned by fedora-dotfiles (~/.zsh_plugins.txt);
+# this repo only guarantees antidote is present and up to date.
+ANTIDOTE_REPO="https://github.com/mattmc3/antidote.git"
+ANTIDOTE_DIR="$HOME/.antidote"
+
+# TPM (tmux plugin manager) — installed via git clone at ~/.tmux/plugins/tpm.
+# The plugin list lives in ~/.tmux.conf as `set -g @plugin '…'` directives
+# (shipped by fedora-dotfiles). setup.sh parses that file as the source of
+# truth: anything declared is cloned into ~/.tmux/plugins, anything on disk
+# but not declared is removed.
+TPM_REPO="https://github.com/tmux-plugins/tpm.git"
+TPM_DIR="$HOME/.tmux/plugins/tpm"
+TMUX_PLUGIN_DIR="$HOME/.tmux/plugins"
 
 echo "=== Fedora Cosmic Atomic Bootstrap ==="
 
@@ -45,32 +48,99 @@ run_chezmoi() {
   fi
 }
 
-sync_zsh_plugin() {
-  local name url dir
-
-  name="$1"
-  url="$2"
-  dir="${XDG_DATA_HOME:-$HOME/.local/share}/zsh/plugins/$name"
-
-  mkdir -p "$(dirname "$dir")"
-
-  if [[ -d "$dir/.git" ]]; then
-    git -C "$dir" remote set-url origin "$url"
-    if git -C "$dir" pull --ff-only --quiet; then
-      echo "  Updated $name"
+install_antidote() {
+  # Ensure antidote itself is installed/updated. Plugin entries live in the
+  # user's ~/.zsh_plugins.txt (shipped by fedora-dotfiles); antidote rebuilds
+  # its static bundle at first shell startup after that file changes.
+  if [[ -d "$ANTIDOTE_DIR/.git" ]]; then
+    if git -C "$ANTIDOTE_DIR" pull --ff-only --quiet; then
+      echo "  Updated antidote"
     else
-      echo "  Failed to update $name; leaving the existing checkout in place." >&2
+      echo "  Failed to update antidote; leaving the existing checkout in place." >&2
     fi
+  else
+    if [[ -e "$ANTIDOTE_DIR" ]]; then
+      echo "  Skipping antidote install because $ANTIDOTE_DIR exists and is not a git checkout." >&2
+      return 0
+    fi
+    git clone --depth 1 "$ANTIDOTE_REPO" "$ANTIDOTE_DIR" >/dev/null
+    echo "  Installed antidote at $ANTIDOTE_DIR"
+  fi
+
+  # Legacy cleanup: previous setup.sh versions cloned each plugin into
+  # ~/.local/share/zsh/plugins. antidote stores plugins under ~/.cache/antidote
+  # instead, so the old tree is dead weight — remove it once.
+  local legacy="${XDG_DATA_HOME:-$HOME/.local/share}/zsh/plugins"
+  if [[ -d "$legacy" ]]; then
+    echo "  Removing legacy plugin directory: $legacy"
+    rm -rf "$legacy"
+  fi
+}
+
+install_tpm() {
+  # Ensure TPM itself is installed or updated.
+  if [[ -d "$TPM_DIR/.git" ]]; then
+    if git -C "$TPM_DIR" pull --ff-only --quiet; then
+      echo "  Updated TPM"
+    else
+      echo "  Failed to update TPM; leaving the existing checkout in place." >&2
+    fi
+  else
+    if [[ -e "$TPM_DIR" ]]; then
+      echo "  Skipping TPM install because $TPM_DIR exists and is not a git checkout." >&2
+      return 0
+    fi
+    mkdir -p "$TMUX_PLUGIN_DIR"
+    git clone --depth 1 "$TPM_REPO" "$TPM_DIR" >/dev/null
+    echo "  Installed TPM at $TPM_DIR"
+  fi
+
+  # Plugin sync depends on chezmoi-applied ~/.tmux.conf as source of truth.
+  local conf="$HOME/.tmux.conf"
+  if [[ ! -f "$conf" ]]; then
+    echo "  ~/.tmux.conf not found yet — skipping tmux plugin sync."
     return 0
   fi
 
-  if [[ -e "$dir" ]]; then
-    echo "  Skipping $name because $dir exists and is not a git checkout." >&2
-    return 0
-  fi
+  # Extract every `set[-option] -g @plugin '<repo>'` declaration.
+  local -a declared=()
+  while IFS= read -r name; do
+    [[ -n "$name" ]] && declared+=("$name")
+  done < <(grep -E "^[[:space:]]*set(-option)?[[:space:]]+-g[[:space:]]+@plugin[[:space:]]+" "$conf" \
+    | sed -E "s/.*@plugin[[:space:]]+['\"]([^'\"]+)['\"].*/\1/")
 
-  git clone --depth 1 "$url" "$dir" >/dev/null
-  echo "  Installed $name"
+  local plugin name dir
+  for plugin in "${declared[@]}"; do
+    name="${plugin##*/}"
+    dir="$TMUX_PLUGIN_DIR/$name"
+    if [[ -d "$dir/.git" ]]; then
+      git -C "$dir" pull --ff-only --quiet || echo "  Failed to update tmux plugin: $plugin" >&2
+    else
+      if git clone --depth 1 "https://github.com/${plugin}.git" "$dir" >/dev/null 2>&1; then
+        echo "  Installed tmux plugin: $plugin"
+      else
+        echo "  Failed to clone tmux plugin: $plugin" >&2
+      fi
+    fi
+  done
+
+  # ~/.tmux.conf is the source of truth: remove any plugin directory that was
+  # cloned previously but is no longer declared. tpm itself is always kept.
+  declare -A DESIRED_TMUX=()
+  for plugin in "${declared[@]}"; do
+    DESIRED_TMUX["${plugin##*/}"]=1
+  done
+  DESIRED_TMUX[tpm]=1
+
+  shopt -s nullglob
+  for dir in "$TMUX_PLUGIN_DIR"/*/; do
+    name="$(basename "$dir")"
+    if [[ -z "${DESIRED_TMUX[$name]:-}" ]]; then
+      echo "  Removing tmux plugin not in ~/.tmux.conf: $name"
+      rm -rf "$dir"
+    fi
+  done
+  shopt -u nullglob
 }
 
 discover_ssh_private_keys() {
@@ -134,35 +204,6 @@ select_github_ssh_key() {
     return 0
   fi
   return 1
-}
-
-sync_zsh_plugins() {
-  local entry name url
-  for entry in "${ZSH_PLUGINS[@]}"; do
-    name="${entry%%|*}"
-    url="${entry#*|}"
-    sync_zsh_plugin "$name" "$url"
-  done
-}
-
-prune_zsh_plugins() {
-  local base entry name dir present
-  base="${XDG_DATA_HOME:-$HOME/.local/share}/zsh/plugins"
-  [[ -d "$base" ]] || return 0
-
-  shopt -s nullglob
-  for dir in "$base"/*/; do
-    name="$(basename "$dir")"
-    present=0
-    for entry in "${ZSH_PLUGINS[@]}"; do
-      [[ "${entry%%|*}" == "$name" ]] && { present=1; break; }
-    done
-    if (( present == 0 )) && [[ -d "$dir/.git" ]]; then
-      echo "  Removing unmanaged zsh plugin: $name"
-      rm -rf "$dir"
-    fi
-  done
-  shopt -u nullglob
 }
 
 run_ai_toolbox_bootstrap() {
@@ -473,12 +514,18 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# 5. Zsh plugins
+# 5. Shell + tmux plugin managers (antidote + TPM)
 # -----------------------------------------------------------------------------
-echo "--- [5/10] Zsh plugins ---"
+echo "--- [5/10] Shell + tmux plugin managers (antidote + TPM) ---"
 
-sync_zsh_plugins
-prune_zsh_plugins
+# Both plugin managers are installed here. Their plugin lists live inside
+# fedora-dotfiles and are the declarative source of truth:
+#   antidote → ~/.zsh_plugins.txt
+#   TPM      → ~/.tmux.conf (`set -g @plugin '…'` directives)
+# install_tpm clones declared entries into ~/.tmux/plugins and removes any
+# checkout that is no longer declared.
+install_antidote
+install_tpm
 
 # -----------------------------------------------------------------------------
 # 6. DevPod CLI

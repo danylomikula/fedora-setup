@@ -34,7 +34,7 @@ The rule is simple:
 2. **Flatpak apps** — installs everything in `FLATPAK_APPS` from Flathub and applies the VS Code sandbox overrides.
 3. **Podman socket** — enables the rootless Podman socket and writes `~/.config/containers/containers.conf` with `pids_limit = 0` so heavy workloads (npm, node-gyp, toolbox dnf) don't hit `pthread_create: EAGAIN`.
 4. **Host CLIs + Chezmoi** — installs `starship` into `~/.local/bin`, bootstraps `chezmoi`, pulls `fedora-dotfiles` over SSH, and applies it with `chezmoi --force` so the git source of truth wins during bootstrap. If no SSH key can reach GitHub, `setup.sh` runs `ssh-keygen -K` to restore resident FIDO keys from the YubiKey, and if several keys are present it shows an interactive picker so you can choose which one to use for the clone.
-5. **Zsh plugins** — installs and updates the plugin checkouts under `~/.local/share/zsh/plugins` listed in `ZSH_PLUGINS`.
+5. **Shell + tmux plugin managers (antidote + TPM)** — clones/updates [antidote](https://github.com/mattmc3/antidote) at `~/.antidote` and [TPM](https://github.com/tmux-plugins/tpm) at `~/.tmux/plugins/tpm`. Zsh plugins are declared in `~/.zsh_plugins.txt`; tmux plugins are declared directly in `~/.tmux.conf` via `set -g @plugin '…'` directives (both managed by `fedora-dotfiles` via `chezmoi`). Antidote regenerates `~/.zsh_plugins.zsh` only when the `.txt` file changed, so cold start stays fast. For tmux, `setup.sh` diffs the `@plugin` list against `~/.tmux/plugins/*` — anything declared is cloned, anything on disk but no longer declared is removed. A one-time migration removes the legacy `~/.local/share/zsh/plugins` directory from pre-antidote versions.
 6. **DevPod CLI** — installs `devpod` into `~/.local/bin` and selects the `docker` provider.
 7. **YubiKey GPG public key** (best-effort) — detects the card and fetches the owner's public key from the URL on the card. Retries with `gpgconf --kill scdaemon` up to five times to recover from stuck scdaemon after prior FIDO/SSH-SK use. This step is wrapped so any failure (no YubiKey, pinentry timeout, unreachable keyserver) is logged and skipped — the rest of the script still runs.
 8. **Default shell → zsh**
@@ -45,11 +45,12 @@ If the currently booted `rpm-ostree` is older than the build that fixes the know
 
 ### Arrays are the source of truth
 
-Three top-level arrays drive what ends up on the host, and the script treats each of them as declarative state. Anything present on the host but missing from the array is removed on the next run.
+Two top-level arrays drive what ends up on the host, and the script treats each of them as declarative state. Anything present on the host but missing from the array is removed on the next run.
 
 - `LAYERED_PACKAGES` — every layered `rpm-ostree` package. The script diffs this against the deployment's `requested-packages` and runs `rpm-ostree uninstall` for extras. `netbird` is preserved when its install is deferred this run so an older `rpm-ostree` never accidentally drops it.
 - `FLATPAK_APPS` — every Flathub-origin Flatpak. The script diffs it against installed apps whose origin is `flathub` and uninstalls extras. Apps from other remotes (Fedora, vendor flatpak repos) are left alone.
-- `ZSH_PLUGINS` — every managed zsh plugin checkout under `~/.local/share/zsh/plugins`. Any git checkout in that directory whose name is not in the array is removed.
+
+Zsh plugins live in `~/.zsh_plugins.txt` inside `fedora-dotfiles` and are managed by [antidote](https://github.com/mattmc3/antidote). Tmux plugins live as `set -g @plugin '…'` lines in `~/.tmux.conf` (same repo) and are managed by [TPM](https://github.com/tmux-plugins/tpm). Both files follow the same declarative rule: `setup.sh` parses them, clones what is declared, and removes anything on disk that is no longer declared. Same idea as the arrays above, just owned by the dotfiles repo rather than this one.
 
 Add or remove an entry in the array and rerun `setup.sh` — the host will match.
 
@@ -105,7 +106,9 @@ That is intended for resident SSH keys stored on a YubiKey.
 
 ## Day-to-day
 
-- edit `LAYERED_PACKAGES`, `FLATPAK_APPS`, or `ZSH_PLUGINS` in `setup.sh` and rerun it to add or remove anything host-global
-- run `setup.sh` again when you change any other host bootstrap logic or want to pull plugin updates
+- edit `LAYERED_PACKAGES` or `FLATPAK_APPS` in `setup.sh` and rerun it to add or remove anything host-global
+- edit `~/.zsh_plugins.txt` in `fedora-dotfiles` and open a new shell (antidote regenerates the bundle) or run `antidote update` to pull upstream changes
+- edit the `@plugin` list in `~/.tmux.conf` and rerun `setup.sh` to install/prune tmux plugins
+- run `setup.sh` again when you change any other host bootstrap logic
 - run `chezmoi update` when you change `fedora-dotfiles`
 - update project-specific tooling in the project repo, not here
